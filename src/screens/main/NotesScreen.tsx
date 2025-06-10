@@ -1,7 +1,5 @@
 // src/screens/main/NotesScreen.tsx
-// מסך הערות מפושט כמו בתמונות
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,83 +14,130 @@ import {
   ScrollView,
   Animated,
   Share,
+  Platform,
+  Dimensions,
+  RefreshControl,
+  Switch,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+
+// Import components
+import NoteGridItem from '../../components/notes/NoteGridItem';
+import NoteListItem from '../../components/notes/NoteListItem';
+import NoteEditor from '../../components/notes/NoteEditor';
+import NotesHeader from '../../components/notes/NotesHeader';
+import NotesFilters from '../../components/notes/NotesFilters';
+import EmptyNotesState from '../../components/notes/EmptyNotesState';
+
+const { width } = Dimensions.get('window');
 
 interface Note {
   id: string;
   title: string;
   content: string;
   tags: string[];
-  createdAt: string;
-  updatedAt: string;
+  createdAt: Date;
+  updatedAt: Date;
   pinned?: boolean;
   color?: string;
   favorite?: boolean;
   wordCount?: number;
   readTime?: number;
+  category?: 'personal' | 'work' | 'ideas' | 'shopping';
+  attachments?: string[];
+  reminder?: Date;
 }
 
-type SortMode = 'recent' | 'created' | 'alphabetical';
-type ViewMode = 'grid' | 'list';
+interface Folder {
+  id: string;
+  name: string;
+  color: string;
+  noteCount: number;
+}
+
+type SortMode = 'recent' | 'created' | 'alphabetical' | 'wordCount';
+type ViewMode = 'grid' | 'list' | 'detailed';
+
+const noteColors = [
+  '#FFE082', '#FFCC80', '#FFAB91', '#F8BBD9',
+  '#E1BEE7', '#C5CAE9', '#BBDEFB', '#B2DFDB',
+  '#C8E6C9', '#DCEDC8', '#F0F4C3', '#FFF9C4'
+];
+
+const categoryColors = {
+  personal: '#4CAF50',
+  work: '#2979FF',
+  ideas: '#FF9800',
+  shopping: '#E91E63',
+};
 
 const NotesScreen: React.FC = () => {
   const { t } = useTranslation();
   const [notes, setNotes] = useState<Note[]>([]);
+  const [filteredNotes, setFilteredNotes] = useState<Note[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [sortBy, setSortBy] = useState<SortMode>('recent');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
-  
-  // Form state
-  const [noteTitle, setNoteTitle] = useState('');
-  const [noteContent, setNoteContent] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [onlyFavorites, setOnlyFavorites] = useState(false);
+  const [onlyPinned, setOnlyPinned] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
 
   // Animation
-  const slideAnim = new Animated.Value(300);
   const fadeAnim = new Animated.Value(1);
 
-  // Mock initial data
   useEffect(() => {
+    // Mock data with enhanced variety
     const mockNotes: Note[] = [
       {
         id: '1',
-        title: 'Meeting Notes',
-        content: 'Some important decisions from the meeting. Key points discussed and action items for the team.',
-        tags: ['work', 'meeting'],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        title: 'Meeting Notes - Q4 Planning',
+        content: 'Key discussion points from today\'s quarterly planning meeting:\n\n• Revenue targets for Q4\n• New product launches\n• Team expansion plans\n• Budget allocations\n\nAction items:\n- Follow up with marketing team\n- Prepare budget proposal\n- Schedule follow-up meeting\n\n#meeting #planning #q4',
+        tags: ['meeting', 'planning', 'q4', 'work'],
+        createdAt: new Date(2024, 3, 24),
+        updatedAt: new Date(2024, 3, 24),
+        category: 'work',
+        color: '#BBDEFB',
         favorite: false,
-        wordCount: 18,
+        pinned: true,
+        wordCount: 45,
         readTime: 1,
       },
       {
         id: '2',
-        title: 'Project Ideas',
-        content: 'Brainstorming session results:\n\n• Mobile app improvements\n• User experience enhancements\n• Performance optimizations\n\n#project #ideas #development',
-        tags: ['project', 'ideas', 'development'],
-        createdAt: new Date(Date.now() - 86400000).toISOString(),
-        updatedAt: new Date(Date.now() - 3600000).toISOString(),
+        title: 'App Ideas',
+        content: 'Brainstorming session results for new mobile app concepts:\n\n🚀 **Productivity Apps:**\n• Time tracking with AI insights\n• Smart habit tracker\n• Voice-activated task manager\n\n💡 **Creative Apps:**\n• Collaborative mood board\n• AI-powered writing assistant\n• Digital art portfolio\n\n🎯 **Lifestyle Apps:**\n• Sustainable living tracker\n• Local community connector\n• Wellness journey planner\n\nNext steps: Market research and feasibility analysis\n\n#ideas #mobile #apps #innovation',
+        tags: ['ideas', 'mobile', 'apps', 'innovation', 'brainstorming'],
+        createdAt: new Date(2024, 3, 23),
+        updatedAt: new Date(2024, 3, 24),
+        category: 'ideas',
+        color: '#FFF9C4',
         favorite: true,
-        wordCount: 25,
-        readTime: 1,
+        pinned: false,
+        wordCount: 85,
+        readTime: 2,
       },
-      {
-        id: '3',
-        title: 'Shopping List',
-        content: 'Weekly groceries:\n\n🥬 Vegetables\n🥛 Dairy products\n🍎 Fruits\n🍞 Bread\n\n#shopping #weekly',
-        tags: ['shopping', 'weekly'],
-        createdAt: new Date(Date.now() - 172800000).toISOString(),
-        updatedAt: new Date(Date.now() - 172800000).toISOString(),
-        favorite: false,
-        wordCount: 15,
-        readTime: 1,
-      },
+      // Add more mock notes...
     ];
+
+    const mockFolders: Folder[] = [
+      { id: '1', name: 'Work Projects', color: '#2979FF', noteCount: 8 },
+      { id: '2', name: 'Personal', color: '#4CAF50', noteCount: 12 },
+      { id: '3', name: 'Ideas & Inspiration', color: '#FF9800', noteCount: 5 },
+      { id: '4', name: 'Shopping Lists', color: '#E91E63', noteCount: 3 },
+    ];
+
     setNotes(mockNotes);
+    setFolders(mockFolders);
 
     Animated.timing(fadeAnim, {
       toValue: 1,
@@ -101,299 +146,362 @@ const NotesScreen: React.FC = () => {
     }).start();
   }, []);
 
-  const filteredNotes = notes.filter(note => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      note.title.toLowerCase().includes(query) ||
-      note.content.toLowerCase().includes(query) ||
-      note.tags.some(tag => tag.toLowerCase().includes(query))
-    );
-  }).sort((a, b) => {
-    switch (sortBy) {
-      case 'recent':
-        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-      case 'created':
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      case 'alphabetical':
-        return a.title.localeCompare(b.title);
-      default:
-        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-    }
-  });
+  // Filter and sort notes
+  useEffect(() => {
+    let filtered = notes;
 
-  const extractTags = (content: string): string[] => {
-    const tagRegex = /#(\w+)/g;
-    const tags: string[] = [];
-    let match;
-    
-    while ((match = tagRegex.exec(content)) !== null) {
-      const tag = match[1].toLowerCase();
-      if (!tags.includes(tag)) {
-        tags.push(tag);
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(note =>
+        note.title.toLowerCase().includes(query) ||
+        note.content.toLowerCase().includes(query) ||
+        note.tags.some(tag => tag.toLowerCase().includes(query))
+      );
+    }
+
+    // Tag filter
+    if (selectedTags.length > 0) {
+      filtered = filtered.filter(note =>
+        selectedTags.every(tag => note.tags.includes(tag))
+      );
+    }
+
+    // Category filter
+    if (selectedCategories.length > 0) {
+      filtered = filtered.filter(note =>
+        note.category && selectedCategories.includes(note.category)
+      );
+    }
+
+    // Favorites filter
+    if (onlyFavorites) {
+      filtered = filtered.filter(note => note.favorite);
+    }
+
+    // Pinned filter
+    if (onlyPinned) {
+      filtered = filtered.filter(note => note.pinned);
+    }
+
+    // Sort
+    filtered.sort((a, b) => {
+      // Always keep pinned notes at top
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+
+      switch (sortBy) {
+        case 'alphabetical':
+          return a.title.localeCompare(b.title);
+        case 'created':
+          return b.createdAt.getTime() - a.createdAt.getTime();
+        case 'wordCount':
+          return (b.wordCount || 0) - (a.wordCount || 0);
+        case 'recent':
+        default:
+          return b.updatedAt.getTime() - a.updatedAt.getTime();
       }
-    }
-    
-    return tags;
+    });
+
+    setFilteredNotes(filtered);
+  }, [notes, searchQuery, selectedTags, selectedCategories, onlyFavorites, onlyPinned, sortBy]);
+
+  useFocusEffect(
+    useCallback(() => {
+      // Refresh when screen comes into focus
+    }, [])
+  );
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    setRefreshing(false);
   };
 
-  const calculateReadTime = (content: string): number => {
-    const wordsPerMinute = 200;
-    const words = content.split(/\s+/).length;
-    return Math.max(1, Math.ceil(words / wordsPerMinute));
-  };
-
-  const openAddModal = () => {
-    resetForm();
-    setShowAddModal(true);
-    Animated.timing(slideAnim, {
-      toValue: 0,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const openEditModal = (note: Note) => {
+  const handleNotePress = (note: Note) => {
     setEditingNote(note);
-    setNoteTitle(note.title);
-    setNoteContent(note.content);
     setShowAddModal(true);
-    Animated.timing(slideAnim, {
-      toValue: 0,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
   };
 
-  const resetForm = () => {
+  const handleAddNote = () => {
     setEditingNote(null);
-    setNoteTitle('');
-    setNoteContent('');
+    setShowAddModal(true);
   };
 
-  const handleSaveNote = () => {
-    if (!noteTitle.trim() && !noteContent.trim()) {
-      Alert.alert('Error', 'Title or content is required');
-      return;
+  const handleDeleteNote = (noteId: string) => {
+    const note = notes.find(n => n.id === noteId);
+    Alert.alert(
+      'Delete Note',
+      `Are you sure you want to delete "${note?.title}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            setNotes(prev => prev.filter(n => n.id !== noteId));
+          },
+        },
+      ]
+    );
+  };
+
+  const handleToggleFavorite = (noteId: string) => {
+    setNotes(prev => prev.map(note =>
+      note.id === noteId
+        ? { ...note, favorite: !note.favorite, updatedAt: new Date() }
+        : note
+    ));
+  };
+
+  const handleTogglePin = (noteId: string) => {
+    setNotes(prev => prev.map(note =>
+      note.id === noteId
+        ? { ...note, pinned: !note.pinned, updatedAt: new Date() }
+        : note
+    ));
+  };
+
+  const handleShareNote = async (note: Note) => {
+    try {
+      await Share.share({
+        title: note.title,
+        message: `${note.title}\n\n${note.content}`,
+      });
+    } catch (error) {
+      console.error('Error sharing note:', error);
     }
+  };
 
-    const title = noteTitle.trim() || noteContent.split('\n')[0].substring(0, 50) + '...';
-    const content = noteContent.trim();
-    const tags = extractTags(content);
-    const wordCount = content.split(/\s+/).length;
-    const readTime = calculateReadTime(content);
-
-    const noteData = {
-      title,
-      content,
-      tags,
-      wordCount,
-      readTime,
-      updatedAt: new Date().toISOString(),
-    };
-
+  const handleSaveNote = (noteData: Partial<Note>) => {
     if (editingNote) {
-      setNotes(prev => prev.map(note => 
-        note.id === editingNote.id 
-          ? { ...note, ...noteData }
+      setNotes(prev => prev.map(note =>
+        note.id === editingNote.id
+          ? { ...note, ...noteData, updatedAt: new Date() }
           : note
       ));
     } else {
       const newNote: Note = {
         id: Date.now().toString(),
         ...noteData,
-        createdAt: new Date().toISOString(),
-        favorite: false,
-      };
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as Note;
       setNotes(prev => [newNote, ...prev]);
     }
-
-    closeModal();
+    setShowAddModal(false);
+    setEditingNote(null);
   };
 
-  const closeModal = () => {
-    Animated.timing(slideAnim, {
-      toValue: 300,
-      duration: 300,
-      useNativeDriver: true,
-    }).start(() => {
-      setShowAddModal(false);
-      resetForm();
-    });
-  };
+  const renderNoteItem: ListRenderItem<Note> = ({ item, index }) => {
+    if (viewMode === 'grid') {
+      return (
+        <NoteGridItem
+          note={item}
+          index={index}
+          onPress={() => handleNotePress(item)}
+          onDelete={() => handleDeleteNote(item.id)}
+          onToggleFavorite={() => handleToggleFavorite(item.id)}
+          onTogglePin={() => handleTogglePin(item.id)}
+          onShare={() => handleShareNote(item)}
+          categoryColors={categoryColors}
+        />
+      );
+    }
 
-  const handleDeleteNote = (noteId: string) => {
-    Alert.alert(
-      'Delete Note',
-      'Are you sure you want to delete this note?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => setNotes(prev => prev.filter(n => n.id !== noteId)),
-        },
-      ]
+    return (
+      <NoteListItem
+        note={item}
+        index={index}
+        viewType={viewMode}
+        onPress={() => handleNotePress(item)}
+        onDelete={() => handleDeleteNote(item.id)}
+        onToggleFavorite={() => handleToggleFavorite(item.id)}
+        onTogglePin={() => handleTogglePin(item.id)}
+        onShare={() => handleShareNote(item)}
+        categoryColors={categoryColors}
+      />
     );
   };
-
-  const toggleFavoriteNote = (noteId: string) => {
-    setNotes(prev => prev.map(note => 
-      note.id === noteId 
-        ? { ...note, favorite: !note.favorite, updatedAt: new Date().toISOString() }
-        : note
-    ));
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - date.getTime());
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) {
-      return 'Today';
-    } else if (diffDays === 1) {
-      return 'Yesterday';
-    } else if (diffDays < 7) {
-      return `${diffDays} days ago`;
-    } else {
-      return date.toLocaleDateString('en-US');
-    }
-  };
-
-  const renderNoteItem: ListRenderItem<Note> = ({ item }) => (
-    <TouchableOpacity
-      style={styles.noteItem}
-      onPress={() => openEditModal(item)}
-      activeOpacity={0.8}
-    >
-      <View style={styles.noteHeader}>
-        <Text style={styles.noteTitle} numberOfLines={1}>
-          {item.title}
-        </Text>
-        <View style={styles.noteActions}>
-          <TouchableOpacity
-            onPress={() => toggleFavoriteNote(item.id)}
-            style={styles.actionButton}
-          >
-            <Ionicons 
-              name={item.favorite ? "heart" : "heart-outline"} 
-              size={16} 
-              color={item.favorite ? "#ff4757" : "#666"} 
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => handleDeleteNote(item.id)}
-            style={styles.actionButton}
-          >
-            <Ionicons name="trash-outline" size={16} color="#666" />
-          </TouchableOpacity>
-        </View>
-      </View>
-      
-      <Text style={styles.notePreview} numberOfLines={2}>
-        {item.content.replace(/#\w+/g, '').trim()}
-      </Text>
-      
-      <View style={styles.noteFooter}>
-        <Text style={styles.noteDate}>{formatDate(item.updatedAt)}</Text>
-        <Text style={styles.noteStats}>
-          {item.wordCount} words • {item.readTime} min read
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="light-content" backgroundColor="#1a1a1a" />
 
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Note</Text>
-          <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.toolbarButton}>
-              <Ionicons name="text" size={20} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.toolbarButton}>
-              <Ionicons name="text" size={20} color="#fff" style={{ fontStyle: 'italic' }} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.toolbarButton}>
-              <Ionicons name="list" size={20} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.toolbarButton}>
-              <Ionicons name="list-outline" size={20} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Content */}
-        {showAddModal ? (
-          <View style={styles.editorContainer}>
-            <TextInput
-              style={styles.titleInput}
-              value={noteTitle}
-              onChangeText={setNoteTitle}
-              placeholder="Meeting Notes"
-              placeholderTextColor="#666"
-              autoFocus
-            />
-            
-            <TextInput
-              style={styles.contentInput}
-              value={noteContent}
-              onChangeText={setNoteContent}
-              placeholder="Some important decisions from the meeting..."
-              placeholderTextColor="#666"
-              multiline
-              textAlignVertical="top"
+        {!showAddModal ? (
+          <>
+            <NotesHeader
+              onAdd={handleAddNote}
+              onFilter={() => setShowFilters(true)}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              sortBy={sortBy}
+              onSortChange={setSortBy}
+              hasActiveFilters={selectedTags.length > 0 || selectedCategories.length > 0 || onlyFavorites || onlyPinned}
             />
 
-            <View style={styles.noteActions}>
-              <Text style={styles.bulletPoint}>• Sample text</Text>
+            {/* Search */}
+            <View style={styles.searchContainer}>
+              <Ionicons name="search" size={18} color="#666" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search notes..."
+                placeholderTextColor="#666"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Ionicons name="close" size={18} color="#666" />
+                </TouchableOpacity>
+              )}
             </View>
 
-            {/* Bottom Actions */}
-            <View style={styles.bottomActions}>
-              <TouchableOpacity style={styles.bottomAction}>
-                <Ionicons name="lock-closed-outline" size={20} color="#fff" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.bottomAction}>
-                <Ionicons name="information-circle-outline" size={20} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          <FlatList
-            data={filteredNotes}
-            keyExtractor={item => item.id}
-            renderItem={renderNoteItem}
-            contentContainerStyle={styles.listContainer}
-            showsVerticalScrollIndicator={false}
-            ListEmptyComponent={() => (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyTitle}>No notes yet</Text>
-                <Text style={styles.emptyDescription}>
-                  Tap the + button to create your first note
-                </Text>
+            <NotesFilters
+              visible={showFilters}
+              onClose={() => setShowFilters(false)}
+              selectedTags={selectedTags}
+              onTagsChange={setSelectedTags}
+              selectedCategories={selectedCategories}
+              onCategoriesChange={setSelectedCategories}
+              onlyFavorites={onlyFavorites}
+              onFavoritesChange={setOnlyFavorites}
+              onlyPinned={onlyPinned}
+              onPinnedChange={setOnlyPinned}
+              sortBy={sortBy}
+              onSortChange={setSortBy}
+              notes={notes}
+              categoryColors={categoryColors}
+            />
+
+            {/* Filter indicators */}
+            {(selectedTags.length > 0 || selectedCategories.length > 0 || onlyFavorites || onlyPinned) && (
+              <View style={styles.filterIndicators}>
+                {onlyFavorites && (
+                  <View style={styles.filterChip}>
+                    <Ionicons name="heart" size={12} color="#ff4757" />
+                    <Text style={[styles.filterChipText, { color: '#ff4757' }]}>
+                      Favorites
+                    </Text>
+                    <TouchableOpacity onPress={() => setOnlyFavorites(false)}>
+                      <Ionicons name="close" size={12} color="#ff4757" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {onlyPinned && (
+                  <View style={styles.filterChip}>
+                    <Ionicons name="pin" size={12} color="#FF9800" />
+                    <Text style={[styles.filterChipText, { color: '#FF9800' }]}>
+                      Pinned
+                    </Text>
+                    <TouchableOpacity onPress={() => setOnlyPinned(false)}>
+                      <Ionicons name="close" size={12} color="#FF9800" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {selectedCategories.map(category => (
+                  <View key={category} style={[
+                    styles.filterChip,
+                    { backgroundColor: categoryColors[category as keyof typeof categoryColors] + '20' }
+                  ]}>
+                    <Text style={[
+                      styles.filterChipText,
+                      { color: categoryColors[category as keyof typeof categoryColors] }
+                    ]}>
+                      {category}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => setSelectedCategories(prev => prev.filter(c => c !== category))}
+                    >
+                      <Ionicons
+                        name="close"
+                        size={12}
+                        color={categoryColors[category as keyof typeof categoryColors]}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+
+                {selectedTags.map(tag => (
+                  <View key={tag} style={styles.filterChip}>
+                    <Text style={styles.filterChipText}>#{tag}</Text>
+                    <TouchableOpacity
+                      onPress={() => setSelectedTags(prev => prev.filter(t => t !== tag))}
+                    >
+                      <Ionicons name="close" size={12} color="#666" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
               </View>
             )}
+
+            {/* Sort indicator */}
+            <View style={styles.sortIndicator}>
+              <Text style={styles.sortText}>
+                Sorted by: {
+                  sortBy === 'recent' ? 'Last modified' :
+                    sortBy === 'created' ? 'Date created' :
+                      sortBy === 'alphabetical' ? 'Title A-Z' :
+                        'Word count'
+                }
+              </Text>
+              <Text style={styles.countText}>
+                {filteredNotes.length} {filteredNotes.length === 1 ? 'note' : 'notes'}
+              </Text>
+            </View>
+
+            {/* Notes List */}
+            <FlatList
+              data={filteredNotes}
+              keyExtractor={item => item.id}
+              renderItem={renderNoteItem}
+              contentContainerStyle={[
+                styles.listContainer,
+                viewMode === 'grid' && styles.gridContainer
+              ]}
+              numColumns={viewMode === 'grid' ? 2 : 1}
+              key={viewMode} // Force re-render when view mode changes
+              showsVerticalScrollIndicator={false}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  tintColor="#2979FF"
+                  colors={["#2979FF"]}
+                />
+              }
+              ListEmptyComponent={() => (
+                <EmptyNotesState
+                  searchQuery={searchQuery}
+                  onlyFavorites={onlyFavorites}
+                  onlyPinned={onlyPinned}
+                />
+              )}
+              ItemSeparatorComponent={() => (
+                viewMode !== 'grid' ? <View style={{ height: 12 }} /> : null
+              )}
+            />
+
+            {/* FAB */}
+            <TouchableOpacity style={styles.fab} onPress={handleAddNote}>
+              <Ionicons name="add" size={24} color="#fff" />
+            </TouchableOpacity>
+          </>
+        ) : (
+          <NoteEditor
+            note={editingNote}
+            onSave={handleSaveNote}
+            onCancel={() => {
+              setShowAddModal(false);
+              setEditingNote(null);
+            }}
+            noteColors={noteColors}
+            categoryColors={categoryColors}
           />
         )}
-
-        {/* FAB */}
-        <TouchableOpacity 
-          style={styles.fab} 
-          onPress={showAddModal ? handleSaveNote : openAddModal}
-        >
-          <Ionicons 
-            name={showAddModal ? "checkmark" : "add"} 
-            size={24} 
-            color="#fff" 
-          />
-        </TouchableOpacity>
       </Animated.View>
     </SafeAreaView>
   );
@@ -407,130 +515,73 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  
-  // Header
-  header: {
+
+  // Search
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2a2a2a',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginHorizontal: 20,
+    marginBottom: 16,
+    gap: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#fff',
+  },
+
+  // Filter Indicators
+  filterIndicators: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 20,
+    marginBottom: 12,
+    gap: 8,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2a2a2a',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6,
+  },
+  filterChipText: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: '500',
+  },
+
+  // Sort Indicator
+  sortIndicator: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 20,
+    marginBottom: 16,
   },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
+  sortText: {
+    fontSize: 12,
+    color: '#666',
   },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  toolbarButton: {
-    padding: 8,
+  countText: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500',
   },
 
-  // Editor Container
-  editorContainer: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  titleInput: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 20,
-    paddingVertical: 8,
-  },
-  contentInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#fff',
-    lineHeight: 24,
-    textAlignVertical: 'top',
-  },
-  noteActions: {
-    marginVertical: 20,
-  },
-  bulletPoint: {
-    fontSize: 16,
-    color: '#fff',
-    lineHeight: 24,
-  },
-  bottomActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 20,
-  },
-  bottomAction: {
-    padding: 12,
-  },
-
-  // List
+  // List Container
   listContainer: {
     paddingHorizontal: 20,
     paddingBottom: 100,
   },
-
-  // Note Item
-  noteItem: {
-    backgroundColor: '#2a2a2a',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-  },
-  noteHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  noteTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
-    flex: 1,
-  },
-  actionButton: {
-    padding: 4,
-  },
-  notePreview: {
-    fontSize: 14,
-    color: '#ccc',
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  noteFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  noteDate: {
-    fontSize: 12,
-    color: '#666',
-  },
-  noteStats: {
-    fontSize: 12,
-    color: '#666',
-  },
-
-  // Empty State
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    marginTop: 40,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  emptyDescription: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
+  gridContainer: {
+    paddingHorizontal: 16,
   },
 
   // FAB
@@ -541,14 +592,11 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#2979FF',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,

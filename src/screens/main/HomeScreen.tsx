@@ -1,10 +1,7 @@
 // src/screens/main/HomeScreen.tsx
-// מסך בית מעוצב בהתאם לתמונות עם עיצוב פשוט וחלק
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
@@ -14,12 +11,24 @@ import {
   Alert,
   Modal,
   TextInput,
-  Switch,
 } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
+
+// Import components
+import HomeHeader from '../../components/home/HomeHeader';
+import CurrentEventBanner from '../../components/home/CurrentEventBanner';
+import ProgressCard from '../../components/home/ProgressCard';
+import QuickActions from '../../components/home/QuickActions';
+import EventsList from '../../components/home/EventsList';
+import TasksList from '../../components/home/TasksList';
+import FloatingActionButtons from '../../components/home/FloatingActionButtons';
+import QuickAddModal from '../../components/home/QuickAddModal';
+import FilterModal from '../../components/home/FilterModal';
 
 interface Task {
   id: string;
@@ -28,6 +37,8 @@ interface Task {
   completed: boolean;
   category: 'work' | 'personal' | 'health' | 'shopping';
   dueTime?: string;
+  description?: string;
+  createdAt: Date;
 }
 
 interface Event {
@@ -36,7 +47,22 @@ interface Event {
   startTime: string;
   endTime: string;
   category: 'work' | 'personal' | 'health' | 'shopping';
+  description?: string;
+  location?: string;
 }
+
+const categoryColors = {
+  work: '#2979FF',
+  personal: '#4CAF50',
+  health: '#FF5722',
+  shopping: '#FF9800',
+};
+
+const priorityColors = {
+  low: '#4CAF50',
+  medium: '#FF9800',
+  high: '#F44336',
+};
 
 const HomeScreen: React.FC = () => {
   const { t } = useTranslation();
@@ -44,10 +70,15 @@ const HomeScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showQuickAdd, setShowQuickAdd] = useState(false);
-  const [quickTaskTitle, setQuickTaskTitle] = useState('');
-  const fadeAnim = new Animated.Value(1);
+  const [showFilters, setShowFilters] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<'time' | 'priority' | 'category'>('time');
 
-  // Mock data
+  // Animation values
+  const fadeAnim = new Animated.Value(1);
+  const progressAnim = new Animated.Value(0);
+
+  // Mock data - Enhanced with more variety
   const [todayTasks, setTodayTasks] = useState<Task[]>([
     {
       id: '1',
@@ -56,6 +87,8 @@ const HomeScreen: React.FC = () => {
       completed: false,
       category: 'work',
       dueTime: '10:00',
+      description: 'Review 3 pending PRs',
+      createdAt: new Date(),
     },
     {
       id: '2',
@@ -64,14 +97,38 @@ const HomeScreen: React.FC = () => {
       completed: false,
       category: 'shopping',
       dueTime: '15:00',
+      description: 'Milk, bread, vegetables',
+      createdAt: new Date(),
     },
     {
       id: '3',
       title: 'Doctor appointment',
-      priority: 'low',
+      priority: 'high',
       completed: false,
       category: 'health',
       dueTime: '16:30',
+      description: 'Annual checkup',
+      createdAt: new Date(),
+    },
+    {
+      id: '4',
+      title: 'Call mom',
+      priority: 'low',
+      completed: true,
+      category: 'personal',
+      dueTime: '12:00',
+      description: 'Weekly check-in',
+      createdAt: new Date(),
+    },
+    {
+      id: '5',
+      title: 'Prepare presentation',
+      priority: 'high',
+      completed: false,
+      category: 'work',
+      dueTime: '09:00',
+      description: 'Q4 results presentation',
+      createdAt: new Date(),
     },
   ]);
 
@@ -82,6 +139,8 @@ const HomeScreen: React.FC = () => {
       startTime: '09:00',
       endTime: '10:00',
       category: 'work',
+      description: 'Weekly standup',
+      location: 'Conference Room A',
     },
     {
       id: '2',
@@ -89,6 +148,8 @@ const HomeScreen: React.FC = () => {
       startTime: '12:30',
       endTime: '13:30',
       category: 'personal',
+      description: 'Catch up lunch',
+      location: 'Downtown Cafe',
     },
     {
       id: '3',
@@ -96,9 +157,21 @@ const HomeScreen: React.FC = () => {
       startTime: '14:00',
       endTime: '15:00',
       category: 'health',
+      description: 'Regular checkup',
+      location: 'Medical Center',
+    },
+    {
+      id: '4',
+      title: 'Gym Session',
+      startTime: '18:00',
+      endTime: '19:30',
+      category: 'health',
+      description: 'Leg day workout',
+      location: 'Fitness Center',
     },
   ]);
 
+  // Animation and lifecycle effects
   useEffect(() => {
     Animated.timing(fadeAnim, {
       toValue: 1,
@@ -113,16 +186,47 @@ const HomeScreen: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      setCurrentTime(new Date());
+    }, [])
+  );
+
   const onRefresh = async () => {
     setRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 1500));
     setRefreshing(false);
+    Alert.alert('Refreshed', 'Data updated successfully', [{ text: 'OK' }]);
   };
 
   const toggleTask = (taskId: string) => {
-    setTodayTasks(prev => prev.map(task =>
-      task.id === taskId ? { ...task, completed: !task.completed } : task
-    ));
+    setTodayTasks(prev => prev.map(task => {
+      if (task.id === taskId) {
+        const updatedTask = { ...task, completed: !task.completed };
+        if (!task.completed) {
+          Alert.alert('Task Completed!', `"${task.title}" marked as done`, [{ text: 'Great!' }]);
+        }
+        return updatedTask;
+      }
+      return task;
+    }));
+  };
+
+  const deleteTask = (taskId: string) => {
+    Alert.alert(
+      'Delete Task',
+      'Are you sure you want to delete this task?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            setTodayTasks(prev => prev.filter(task => task.id !== taskId));
+          },
+        },
+      ]
+    );
   };
 
   const getCurrentEvent = () => {
@@ -136,188 +240,168 @@ const HomeScreen: React.FC = () => {
     });
   };
 
+  const getUpcomingEvent = () => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentTimeStr = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
+
+    return todayEvents.find(event => event.startTime > currentTimeStr);
+  };
+
   const currentEvent = getCurrentEvent();
+  const upcomingEvent = getUpcomingEvent();
 
   const getGreeting = () => {
     const hour = currentTime.getHours();
-    if (hour < 12) return 'בוקר טוב';
-    if (hour < 17) return 'צהריים טובים';
-    return 'ערב טוב';
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
   };
 
   const formatDate = () => {
-    const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
-    const months = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
     const dayName = days[currentTime.getDay()];
     const day = currentTime.getDate();
     const month = months[currentTime.getMonth()];
 
-    return `יום ${dayName}, ${day} ב${month}`;
+    return `${dayName}, ${month} ${day}`;
   };
 
   const completedTasksCount = todayTasks.filter(task => task.completed).length;
-  const completionPercentage = todayTasks.length > 0 ? Math.round((completedTasksCount / todayTasks.length) * 100) : 0;
+  const totalTasks = todayTasks.length;
 
-  const handleQuickAdd = () => {
-    if (quickTaskTitle.trim()) {
+  const handleQuickAdd = (type: 'task' | 'event', data: any) => {
+    if (type === 'task') {
       const newTask: Task = {
         id: Date.now().toString(),
-        title: quickTaskTitle.trim(),
-        priority: 'medium',
+        title: data.title,
+        priority: data.priority,
         completed: false,
-        category: 'work',
+        category: data.category,
+        dueTime: '18:00',
+        createdAt: new Date(),
       };
       setTodayTasks(prev => [newTask, ...prev]);
-      setQuickTaskTitle('');
-      setShowQuickAdd(false);
+      Alert.alert('Success', 'Task added successfully!');
+    } else {
+      navigation.navigate('Calendar' as never);
     }
+    setShowQuickAdd(false);
   };
 
+  const getFilteredTasks = () => {
+    let filtered = todayTasks;
+
+    if (categoryFilter) {
+      filtered = filtered.filter(task => task.category === categoryFilter);
+    }
+
+    return filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'priority':
+          const priorityOrder = { high: 3, medium: 2, low: 1 };
+          return priorityOrder[b.priority] - priorityOrder[a.priority];
+        case 'category':
+          return a.category.localeCompare(b.category);
+        case 'time':
+        default:
+          if (a.dueTime && b.dueTime) {
+            return a.dueTime.localeCompare(b.dueTime);
+          }
+          return 0;
+      }
+    });
+  };
+
+  const filteredTasks = getFilteredTasks();
+
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a1a1a" />
+    <GestureHandlerRootView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <StatusBar barStyle="light-content" backgroundColor="#1a1a1a" />
 
-      <Animated.ScrollView
-        style={[styles.scrollView, { opacity: fadeAnim }]}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#007AFF"
-            colors={["#007AFF"]}
-          />
-        }
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.greetingContainer}>
-            <Text style={styles.greeting}>
-              {getGreeting()}, Yedid
-            </Text>
-            <Text style={styles.date}>{formatDate()}</Text>
-          </View>
-
-          <TouchableOpacity
-            style={styles.profileButton}
-            onPress={() => navigation.navigate('Settings' as never)}
-          >
-            <View style={styles.profileCircle}>
-              <Text style={styles.profileInitial}>Y</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* Current Event */}
-        {currentEvent && (
-          <View style={styles.currentEventContainer}>
-            <Ionicons name="time-outline" size={16} color="#fff" />
-            <Text style={styles.currentEventText}>
-              אירוע נוכחי: {currentEvent.title}
-            </Text>
-          </View>
-        )}
-
-        {/* Progress */}
-        <View style={styles.progressContainer}>
-          <View style={styles.progressHeader}>
-            <Text style={styles.progressLabel}>התקדמות היום</Text>
-            <Text style={styles.progressPercentage}>{completionPercentage}%</Text>
-          </View>
-          <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${completionPercentage}%` }]} />
-          </View>
-          <Text style={styles.progressSubtext}>
-            {completedTasksCount} מתוך {todayTasks.length} משימות הושלמו
-          </Text>
-        </View>
-
-        {/* Today's Events */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>אירועים להיום</Text>
-          {todayEvents.map((event) => (
-            <View key={event.id} style={styles.eventItem}>
-              <Text style={styles.eventTime}>
-                {event.startTime}
-              </Text>
-              <Text style={styles.eventTitle}>{event.title}</Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Today's Tasks */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>משימות להיום</Text>
-          {todayTasks.map((task) => (
-            <View key={task.id} style={styles.taskItem}>
-              <TouchableOpacity
-                onPress={() => toggleTask(task.id)}
-                style={[
-                  styles.taskCheckbox,
-                  task.completed && styles.taskCheckboxCompleted
-                ]}
-              >
-                {task.completed && (
-                  <Ionicons name="checkmark" size={14} color="#fff" />
-                )}
-              </TouchableOpacity>
-
-              <View style={styles.taskContent}>
-                <Text style={[
-                  styles.taskTitle,
-                  task.completed && styles.taskTitleCompleted
-                ]}>
-                  {task.title}
-                </Text>
-                {task.category === 'work' && (
-                  <Text style={styles.taskCategory}>Work</Text>
-                )}
-              </View>
-            </View>
-          ))}
-        </View>
-      </Animated.ScrollView>
-
-      {/* FAB */}
-      <TouchableOpacity 
-        style={styles.fab} 
-        onPress={() => setShowQuickAdd(true)}
-      >
-        <Ionicons name="add" size={24} color="#fff" />
-      </TouchableOpacity>
-
-      {/* Quick Add Modal */}
-      <Modal
-        visible={showQuickAdd}
-        animationType="slide"
-        presentationStyle="pageSheet"
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowQuickAdd(false)}>
-              <Text style={styles.cancelButton}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Quick Add</Text>
-            <TouchableOpacity onPress={handleQuickAdd}>
-              <Text style={styles.saveButton}>Add</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.formContainer}>
-            <TextInput
-              style={styles.textInput}
-              value={quickTaskTitle}
-              onChangeText={setQuickTaskTitle}
-              placeholder="Task title"
-              placeholderTextColor="#666"
-              autoFocus
+        <Animated.ScrollView
+          style={[styles.scrollView, { opacity: fadeAnim }]}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#2979FF"
+              colors={["#2979FF"]}
+              progressBackgroundColor="#2a2a2a"
             />
-          </View>
-        </SafeAreaView>
-      </Modal>
-    </SafeAreaView>
+          }
+        >
+          <HomeHeader
+            greeting={getGreeting()}
+            userName="Yedid"
+            currentDate={formatDate()}
+            userInitial="Y"
+            onProfilePress={() => navigation.navigate('Settings' as never)}
+          />
+
+          <CurrentEventBanner
+            currentEvent={currentEvent}
+            upcomingEvent={upcomingEvent}
+          />
+
+          <ProgressCard
+            completedCount={completedTasksCount}
+            totalCount={totalTasks}
+            progressAnim={progressAnim}
+          />
+
+          <QuickActions
+            onFilterPress={() => setShowFilters(true)}
+            sortBy={sortBy}
+            onSortChange={setSortBy}
+          />
+
+          <EventsList
+            events={todayEvents}
+            categoryColors={categoryColors}
+            onNavigateToCalendar={() => navigation.navigate('Calendar' as never)}
+          />
+
+          <TasksList
+            tasks={filteredTasks}
+            categoryFilter={categoryFilter}
+            onClearFilter={() => setCategoryFilter(null)}
+            onToggleTask={toggleTask}
+            onDeleteTask={deleteTask}
+            onNavigateToTasks={() => navigation.navigate('Tasks' as never)}
+            categoryColors={categoryColors}
+            priorityColors={priorityColors}
+          />
+        </Animated.ScrollView>
+
+        <FloatingActionButtons
+          onAddTask={() => setShowQuickAdd(true)}
+          onAddEvent={() => setShowQuickAdd(true)}
+        />
+
+        <QuickAddModal
+          visible={showQuickAdd}
+          onClose={() => setShowQuickAdd(false)}
+          onSave={handleQuickAdd}
+          categoryColors={categoryColors}
+          priorityColors={priorityColors}
+        />
+
+        <FilterModal
+          visible={showFilters}
+          onClose={() => setShowFilters(false)}
+          categoryFilter={categoryFilter}
+          onCategoryFilterChange={setCategoryFilter}
+          categoryColors={categoryColors}
+        />
+      </SafeAreaView>
+    </GestureHandlerRootView>
   );
 };
 
@@ -331,235 +415,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 100,
-  },
-
-  // Header
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginTop: 20,
-    marginBottom: 24,
-  },
-  greetingContainer: {
-    flex: 1,
-  },
-  greeting: {
-    fontSize: 18,
-    fontWeight: '500',
-    color: '#fff',
-    marginBottom: 4,
-  },
-  date: {
-    fontSize: 14,
-    color: '#666',
-  },
-  profileButton: {
-    marginLeft: 16,
-  },
-  profileCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profileInitial: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-
-  // Current Event
-  currentEventContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2a2a2a',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 20,
-  },
-  currentEventText: {
-    fontSize: 14,
-    color: '#fff',
-    marginLeft: 8,
-  },
-
-  // Progress
-  progressContainer: {
-    backgroundColor: '#2a2a2a',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  progressLabel: {
-    fontSize: 12,
-    color: '#fff',
-  },
-  progressPercentage: {
-    fontSize: 12,
-    color: '#fff',
-    fontWeight: '500',
-  },
-  progressBar: {
-    height: 8,
-    backgroundColor: '#333',
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#007AFF',
-    borderRadius: 4,
-  },
-  progressSubtext: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
-  },
-
-  // Sections
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '500',
-    color: '#fff',
-    marginBottom: 12,
-  },
-
-  // Events
-  eventItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2a2a2a',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 8,
-  },
-  eventTime: {
-    fontSize: 14,
-    color: '#007AFF',
-    fontWeight: '500',
-    minWidth: 60,
-    marginRight: 12,
-  },
-  eventTitle: {
-    fontSize: 16,
-    color: '#fff',
-    flex: 1,
-  },
-
-  // Tasks
-  taskItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2a2a2a',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 8,
-  },
-  taskCheckbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#666',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  taskCheckboxCompleted: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
-  },
-  taskContent: {
-    flex: 1,
-  },
-  taskTitle: {
-    fontSize: 16,
-    color: '#fff',
-    marginBottom: 4,
-  },
-  taskTitleCompleted: {
-    textDecorationLine: 'line-through',
-    opacity: 0.5,
-  },
-  taskCategory: {
-    fontSize: 14,
-    color: '#666',
-  },
-
-  // FAB
-  fab: {
-    position: 'absolute',
-    bottom: 90,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-
-  // Modal
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#1a1a1a',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2a2a2a',
-  },
-  cancelButton: {
-    fontSize: 16,
-    color: '#007AFF',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  saveButton: {
-    fontSize: 16,
-    color: '#007AFF',
-    fontWeight: '600',
-  },
-  formContainer: {
-    padding: 20,
-  },
-  textInput: {
-    backgroundColor: '#2a2a2a',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#fff',
+    paddingBottom: 120,
   },
 });
 

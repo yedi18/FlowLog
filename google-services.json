@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "465237889112",
+    "project_id": "flowlog-fb746",
+    "storage_bucket": "flowlog-fb746.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:465237889112:android:5256ade7fc68c42b54ba2d",
+        "android_client_info": {
+          "package_name": "com.yedidya.flowlog"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBkSSjdjjUvBSoCH14ecHj3Uxi1TooTXSU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

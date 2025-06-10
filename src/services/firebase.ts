@@ -28,4 +28,3 @@ export const db = getFirestore(app);
 export default app;
 
 // לוג לבדיקה
-console.log('Firebase initialized with project:', firebaseConfig.projectId);

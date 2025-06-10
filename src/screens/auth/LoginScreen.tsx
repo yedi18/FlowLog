@@ -55,7 +55,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const authError = useSelector(selectAuthError);
 
   // Animations
-  const fadeAnim = React.useRef(new Animated.Value(1)).current;
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const slideAnim = React.useRef(new Animated.Value(50)).current;
   const logoScale = React.useRef(new Animated.Value(0.8)).current;
 

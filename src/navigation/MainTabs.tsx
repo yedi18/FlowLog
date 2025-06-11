@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 // Screens - FlowLog (Make sure these imports match your actual file structure)
 import HomeScreen from '../screens/main/HomeScreen';
 import TasksScreen from '../screens/main/TasksScreen';
+import GoalsScreen from '../screens/main/GoalsScreen';
 import CalendarScreen from '../screens/main/CalendarScreen';
 import NotesScreen from '../screens/main/NotesScreen';
 import SettingsScreen from '../screens/main/SettingsScreen';
@@ -16,6 +17,7 @@ import SettingsScreen from '../screens/main/SettingsScreen';
 export type MainTabParamList = {
   Home: undefined;
   Tasks: undefined;
+  Goals: undefined;
   Calendar: undefined;
   Notes: undefined;
   Settings: undefined;
@@ -55,6 +57,16 @@ const MainTabs = () => {
           tabBarLabel: t('nav.tasks', 'Tasks'),
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="checkmark-circle-outline" color={color} size={size} />
+          )
+        }}
+      />
+      <Tab.Screen
+        name="Goals"
+        component={GoalsScreen}
+        options={{
+          tabBarLabel: 'Goals',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="flag-outline" color={color} size={size} />
           )
         }}
       />

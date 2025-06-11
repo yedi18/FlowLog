@@ -1,5 +1,6 @@
 // src/components/tasks/QuickAddTask.tsx - Complete Todoist Quick Add Replica
 import React, { useState, useEffect, useRef } from 'react';
+import * as chrono from 'chrono-node';
 import {
     View,
     Text,
@@ -164,13 +165,18 @@ const QuickAddTask: React.FC<QuickAddTaskProps> = ({
     const parseNaturalLanguage = (text: string) => {
         const lowerText = text.toLowerCase();
 
-        // Check for natural language dates
+        // Use chrono to parse generic date/time expressions
+        const parsed = chrono.parse(text)[0];
+        if (parsed) {
+            setDueDate(parsed.start.date());
+            text = text.replace(parsed.text, '').trim();
+        }
+
+        // Fallback keywords
         for (const suggestion of dateSuggestions) {
             if (lowerText.includes(suggestion.text)) {
                 setDueDate(suggestion.date);
-                // Remove the date text from title
-                const newTitle = text.replace(new RegExp(suggestion.text, 'gi'), '').trim();
-                setTitle(newTitle);
+                text = text.replace(new RegExp(suggestion.text, 'gi'), '').trim();
                 break;
             }
         }
@@ -180,7 +186,7 @@ const QuickAddTask: React.FC<QuickAddTaskProps> = ({
         if (priorityMatch) {
             setPriority(parseInt(priorityMatch[1]) as Priority);
             const newTitle = text.replace(/p[1-4]/gi, '').trim();
-            setTitle(newTitle);
+            text = newTitle;
         }
 
         // Check for project markers
@@ -191,7 +197,7 @@ const QuickAddTask: React.FC<QuickAddTaskProps> = ({
             if (project) {
                 setSelectedProject(project.id);
                 const newTitle = text.replace(/#\w+/g, '').trim();
-                setTitle(newTitle);
+                text = newTitle;
             }
         }
 
@@ -209,9 +215,20 @@ const QuickAddTask: React.FC<QuickAddTaskProps> = ({
             if (foundLabels.length > 0) {
                 setSelectedLabels(prev => [...new Set([...prev, ...foundLabels])]);
                 const newTitle = text.replace(/@\w+/g, '').trim();
-                setTitle(newTitle);
+                text = newTitle;
             }
         }
+
+        // Reminder shortcuts like !5m, !1h, !1d
+        const reminderMatch = text.match(/!(\d+)([mhd])/i);
+        if (reminderMatch) {
+            const value = parseInt(reminderMatch[1]);
+            const unit = reminderMatch[2];
+            setReminderTime(`${value}${unit}`);
+            text = text.replace(reminderMatch[0], '').trim();
+        }
+
+        setTitle(text.trim());
     };
 
     const handleTitleChange = (text: string) => {
@@ -220,6 +237,12 @@ const QuickAddTask: React.FC<QuickAddTaskProps> = ({
         // Parse natural language on space or enter
         if (text.endsWith(' ') || text.includes('\n')) {
             parseNaturalLanguage(text.trim());
+        }
+
+        if (text.endsWith('#')) {
+            setShowProjectPicker(true);
+        } else if (text.endsWith('@')) {
+            setShowLabelPicker(true);
         }
     };
 

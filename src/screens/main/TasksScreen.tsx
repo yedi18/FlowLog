@@ -1,7 +1,7 @@
 // src/screens/main/TasksScreen.tsx
 // מסך משימות מעודכן עם עיצוב פשוט כמו בתמונות
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   ListRenderItem,
   StatusBar,
   Animated,
+  Pressable,
   Switch,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -55,6 +56,10 @@ const TasksScreen: React.FC = () => {
   // Animation
   const slideAnim = new Animated.Value(300);
   const fadeAnim = new Animated.Value(1);
+  const SIDEBAR_WIDTH = 260;
+  const sidebarAnim = useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarItems = ['Inbox', 'Today', 'Upcoming', 'Projects', 'Labels'];
 
   // Mock initial data
   useEffect(() => {
@@ -157,6 +162,23 @@ const TasksScreen: React.FC = () => {
     );
   };
 
+  const openSidebar = () => {
+    setSidebarOpen(true);
+    Animated.timing(sidebarAnim, {
+      toValue: 0,
+      duration: 250,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeSidebar = () => {
+    Animated.timing(sidebarAnim, {
+      toValue: -SIDEBAR_WIDTH,
+      duration: 250,
+      useNativeDriver: true,
+    }).start(() => setSidebarOpen(false));
+  };
+
   const openAddModal = () => {
     resetForm();
     setShowAddModal(true);
@@ -252,9 +274,25 @@ const TasksScreen: React.FC = () => {
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="light-content" backgroundColor="#1a1a1a" />
 
+      {sidebarOpen && (
+        <Pressable style={styles.overlay} onPress={closeSidebar} />
+      )}
+      <Animated.View
+        style={[styles.sidebar, { transform: [{ translateX: sidebarAnim }] }]}
+      >
+        {sidebarItems.map(item => (
+          <TouchableOpacity key={item} style={styles.sidebarItem}>
+            <Text style={styles.sidebarItemText}>{item}</Text>
+          </TouchableOpacity>
+        ))}
+      </Animated.View>
+
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
         {/* Header */}
         <View style={styles.header}>
+          <TouchableOpacity style={styles.menuButton} onPress={openSidebar}>
+            <Ionicons name="menu" size={24} color="#fff" />
+          </TouchableOpacity>
           <Text style={styles.headerTitle}>Tasks</Text>
           <TouchableOpacity style={styles.moreButton}>
             <Ionicons name="ellipsis-vertical" size={20} color="#fff" />
@@ -405,6 +443,33 @@ const styles = StyleSheet.create({
   },
   moreButton: {
     padding: 8,
+  },
+  menuButton: {
+    padding: 8,
+  },
+
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    zIndex: 1,
+  },
+  sidebar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 260,
+    backgroundColor: '#2a2a2a',
+    paddingTop: 60,
+    paddingHorizontal: 20,
+    zIndex: 2,
+  },
+  sidebarItem: {
+    paddingVertical: 12,
+  },
+  sidebarItemText: {
+    color: '#fff',
+    fontSize: 16,
   },
 
   // Search
@@ -606,3 +671,4 @@ const styles = StyleSheet.create({
 });
 
 export default TasksScreen;
+

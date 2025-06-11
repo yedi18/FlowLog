@@ -700,4 +700,5 @@ export interface AppError {
   message: string;
   details?: any;
   timestamp: string;
+  timestamp: string;
 }
